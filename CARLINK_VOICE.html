@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CARLINK VOICE</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#111827;color:white;display:flex;justify-content:center;min-height:100vh}
+.app{width:92%;max-width:430px;margin:25px auto;background:#1f2937;border-radius:22px;padding:22px;box-sizing:border-box;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+h1{text-align:center;margin:5px 0 3px}.sub{text-align:center;color:#9ca3af;margin-bottom:20px}
+label{display:block;margin:12px 0 6px;color:#d1d5db}
+input{width:100%;box-sizing:border-box;padding:13px;border-radius:10px;border:1px solid #4b5563;background:#111827;color:white;font-size:15px}
+button{width:100%;border:0;border-radius:14px;padding:16px;margin-top:14px;font-size:18px;font-weight:bold;cursor:pointer}
+#save{background:#374151;color:white}#talk{background:#2563eb;color:white;font-size:22px}#talk.listening{background:#dc2626}
+.box{background:#111827;border-radius:14px;padding:15px;margin-top:16px}.title{color:#9ca3af;font-size:13px}
+.value{font-size:21px;margin-top:6px;min-height:26px}.status{font-size:14px;color:#9ca3af}
+.help{color:#d1d5db;font-size:13px;line-height:1.5;margin-top:18px}.examples{color:#9ca3af;font-size:13px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>🚗 CARLINK VOICE</h1>
+<div class="sub">Asistente de voz para tu Cross-Kart</div>
+<label for="token">Auth Token de Blynk</label>
+<input id="token" type="password" placeholder="Pega aquí tu Auth Token">
+<button id="save">Guardar token en este teléfono</button>
+<button id="talk">🎤 HABLAR</button>
+<div class="box"><div class="title">Lo que dijiste</div><div id="heard" class="value">—</div></div>
+<div class="box"><div class="title">Respuesta</div><div id="answer" class="value">—</div></div>
+<div class="box"><div class="status" id="status">Listo.</div></div>
+<div class="help"><b>Preguntas disponibles:</b>
+<div class="examples">
+• ¿Cuál es el voltaje?<br>• ¿Cuánta corriente hay?<br>• ¿Cuál es la temperatura del motor?<br>
+• ¿Cuál es la velocidad?<br>• ¿Cuál es la potencia?<br>• ¿Cuánta batería queda?<br>• ¿Qué sesión es?
+</div></div>
+</div>
+<script>
+const tokenInput=document.getElementById("token"),saveBtn=document.getElementById("save"),talkBtn=document.getElementById("talk");
+const heard=document.getElementById("heard"),answer=document.getElementById("answer"),statusBox=document.getElementById("status");
+tokenInput.value=localStorage.getItem("carlink_token")||"";
+saveBtn.onclick=()=>{const token=tokenInput.value.trim();if(!token){speak("Primero escribe el Auth Token de Blynk.");return}
+localStorage.setItem("carlink_token",token);statusBox.textContent="Token guardado en este teléfono.";speak("Token guardado.");};
+
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recognition;
+if(SpeechRecognition){
+ recognition=new SpeechRecognition();recognition.lang="es-HN";recognition.continuous=false;recognition.interimResults=false;
+ recognition.onstart=()=>{talkBtn.classList.add("listening");talkBtn.textContent="🔴 ESCUCHANDO...";statusBox.textContent="Habla ahora...";};
+ recognition.onend=()=>{talkBtn.classList.remove("listening");talkBtn.textContent="🎤 HABLAR";};
+ recognition.onerror=e=>{talkBtn.classList.remove("listening");talkBtn.textContent="🎤 HABLAR";statusBox.textContent="Error de voz: "+e.error;};
+ recognition.onresult=async e=>{const text=e.results[0][0].transcript;heard.textContent=text;await processQuestion(text);};
+}else{talkBtn.disabled=true;statusBox.textContent="Prueba Chrome en Android para reconocimiento de voz.";}
+
+talkBtn.onclick=()=>{if(!recognition)return;const token=tokenInput.value.trim()||localStorage.getItem("carlink_token");
+if(!token){statusBox.textContent="Escribe primero el Auth Token de Blynk.";speak("Primero escribe el Auth Token de Blynk.");return} recognition.start();};
+
+function speak(text){if("speechSynthesis"in window){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="es-HN";u.rate=.95;u.pitch=1;speechSynthesis.speak(u);}}
+function normalize(text){return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");}
+function detectDatastream(text){
+ const t=normalize(text);
+ if(t.includes("volt")||t.includes("tension"))return"V0";
+ if(t.includes("corriente")||t.includes("amper")||t.includes("consumo"))return"V1";
+ if(t.includes("temperatura")||t.includes("caliente")||t.includes("motor"))return"V2";
+ if(t.includes("velocidad")||t.includes("rapido")||t.includes("millas"))return"V3";
+ if(t.includes("potencia")||t.includes("watt")||t.includes("vat"))return"V4";
+ if(t.includes("bateria")||t.includes("carga")||t.includes("porcentaje"))return"V5";
+ if(t.includes("sesion")||t.includes("session"))return"V6";
+ return null;
+}
+function formatResponse(pin,value){
+ const n=Number(value);
+ if(pin==="V0")return`El voltaje actual es ${n.toFixed(2)} voltios.`;
+ if(pin==="V1")return`La corriente actual es ${n.toFixed(2)} amperios.`;
+ if(pin==="V2")return`La temperatura del motor es ${n.toFixed(1)} grados Celsius.`;
+ if(pin==="V3")return`La velocidad actual es ${Math.round(n)} millas por hora.`;
+ if(pin==="V4")return`La potencia actual es ${Math.round(n)} vatios.`;
+ if(pin==="V5")return`La batería está al ${Math.round(n)} por ciento.`;
+ if(pin==="V6")return`La sesión actual es la número ${Math.round(n)}.`;
+ return`El valor actual es ${value}.`;
+}
+async function getBlynk(pin){
+ const token=tokenInput.value.trim()||localStorage.getItem("carlink_token");
+ const url="https://blynk.cloud/external/api/get?token="+encodeURIComponent(token)+"&"+pin;
+ const response=await fetch(url);
+ if(!response.ok)throw new Error("HTTP "+response.status);
+ const data=await response.text();
+ if(data.includes('"error"'))throw new Error(data);
+ return data.trim();
+}
+async function processQuestion(text){
+ const pin=detectDatastream(text);
+ if(!pin){const msg="No entendí. Pregunta por voltaje, corriente, temperatura, velocidad, potencia, batería o sesión.";answer.textContent=msg;statusBox.textContent="Pregunta no reconocida.";speak(msg);return;}
+ statusBox.textContent="Consultando Blynk "+pin+"...";answer.textContent="Consultando...";
+ try{const value=await getBlynk(pin);const msg=formatResponse(pin,value);answer.textContent=msg;statusBox.textContent="Dato recibido de Blynk: "+pin;speak(msg);}
+ catch(e){console.error(e);const msg="No pude obtener el dato desde Blynk. Revisa el ESP32 y el Auth Token.";answer.textContent=msg;statusBox.textContent="Error al consultar Blynk.";speak(msg);}
+}
+</script>
+</body>
+</html>
